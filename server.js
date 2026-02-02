@@ -21,6 +21,7 @@ const io = new Server(server, {
 // KULLANICI HARİTASI (ID -> Socket ID)
 let onlineUsers = new Map();
 
+// PHP Webhook
 app.post('/webhook', (req, res) => {
   const data = req.body;
   if(data && data.mesaj) {
@@ -32,27 +33,28 @@ app.post('/webhook', (req, res) => {
 });
 
 io.on('connection', (socket) => {
-  console.log('Bağlantı:', socket.id);
-
-  // 1. GİRİŞ (ID'yi String'e çevirerek kaydet)
+  
+  // 1. KULLANICI GİRİŞİ (KESİN KAYIT)
   socket.on('giris_yap', (userId) => {
     const uid = String(userId);
+    // Varsa eski kaydı sil, yenisini ekle
     onlineUsers.set(uid, socket.id);
-    console.log(`User ${uid} online.`);
+    console.log(`User ${uid} online: ${socket.id}`);
     io.emit('online_users_update', Array.from(onlineUsers.keys()));
   });
 
-  // 2. ARAMA YAP (SİNYAL)
+  // 2. ARAMA BAŞLATMA
   socket.on('arama_yap', (data) => {
     const targetSocket = onlineUsers.get(String(data.alici_id));
     if (targetSocket) {
       io.to(targetSocket).emit('gelen_arama', data);
     } else {
-      io.to(socket.id).emit('kullanici_offline');
+      // Hedef online değilse arayana bildir
+      io.to(socket.id).emit('arama_kapandi', { sebep: 'offline' });
     }
   });
 
-  // 3. ARAMAYI CEVAPLA
+  // 3. CEVAPLAMA
   socket.on('aramayi_cevapla', (data) => {
     const targetSocket = onlineUsers.get(String(data.to));
     if (targetSocket) {
@@ -60,7 +62,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 4. ICE CANDIDATE (BAĞLANTI YOLU)
+  // 4. ICE CANDIDATE
   socket.on('ice_candidate', (data) => {
     const targetSocket = onlineUsers.get(String(data.to));
     if (targetSocket) {
@@ -68,12 +70,15 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 5. KAPAT
+  // 5. ARAMAYI KAPAT (HER İKİ TARAFA DA BİLDİR)
   socket.on('aramayi_kapat', (data) => {
     const targetSocket = onlineUsers.get(String(data.to));
+    // Karşı tarafa kapat
     if (targetSocket) {
       io.to(targetSocket).emit('arama_kapandi');
     }
+    // Kendine de kapat (Garanti olsun)
+    io.to(socket.id).emit('arama_kapandi');
   });
 
   socket.on('disconnect', () => {
@@ -87,4 +92,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Sunucu ${PORT} portunda.`));
+server.listen(PORT, () => console.log(`Sunucu ${PORT} portunda aktif.`));
