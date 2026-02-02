@@ -11,7 +11,6 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 const server = http.createServer(app);
 
-// CORS Ayarları
 const io = new Server(server, {
   cors: {
     origin: "*", 
@@ -19,80 +18,73 @@ const io = new Server(server, {
   }
 });
 
-// ONLİNE KULLANICILARI TUTAN HARİTA (User ID -> Socket ID)
+// KULLANICI HARİTASI (ID -> Socket ID)
 let onlineUsers = new Map();
 
-// PHP'den gelen mesajı dağıtan Webhook
 app.post('/webhook', (req, res) => {
   const data = req.body;
   if(data && data.mesaj) {
     io.emit('yeni_mesaj', data);
-    res.status(200).send('Mesaj iletildi');
+    res.status(200).send('OK');
   } else {
-    res.status(400).send('Veri eksik');
+    res.status(400).send('Eksik');
   }
 });
 
 io.on('connection', (socket) => {
-  console.log('Kullanıcı bağlandı: ' + socket.id);
+  console.log('Bağlantı:', socket.id);
 
-  // 1. KULLANICI GİRİŞ YAPINCA (SOCKET ID İLE EŞLEŞTİR)
+  // 1. GİRİŞ (ID'yi String'e çevirerek kaydet)
   socket.on('giris_yap', (userId) => {
-    onlineUsers.set(userId, socket.id);
-    console.log(`Kullanıcı ID: ${userId} -> Socket: ${socket.id} eşleşti.`);
-    io.emit('online_kullanicilar', Array.from(onlineUsers.keys())); // Herkese online listesini at
+    const uid = String(userId);
+    onlineUsers.set(uid, socket.id);
+    console.log(`User ${uid} online.`);
+    io.emit('online_users_update', Array.from(onlineUsers.keys()));
   });
 
-  // 2. ARAMA BAŞLATMA İSTEĞİ (SİNYAL)
+  // 2. ARAMA YAP (SİNYAL)
   socket.on('arama_yap', (data) => {
-    // data = { alici_id, gonderen_id, gonderen_isim, gonderen_resim, tip (ses/video), offer (sinyal) }
-    const aliciSocket = onlineUsers.get(parseInt(data.alici_id));
-    if (aliciSocket) {
-      io.to(aliciSocket).emit('gelen_arama', data);
+    const targetSocket = onlineUsers.get(String(data.alici_id));
+    if (targetSocket) {
+      io.to(targetSocket).emit('gelen_arama', data);
     } else {
-      // Kullanıcı offline ise arayan kişiye bildir
       io.to(socket.id).emit('kullanici_offline');
     }
   });
 
-  // 3. ARAMAYI CEVAPLAMA
+  // 3. ARAMAYI CEVAPLA
   socket.on('aramayi_cevapla', (data) => {
-    const arayanSocket = onlineUsers.get(parseInt(data.to)); // Arayan kişinin ID'si
-    if (arayanSocket) {
-      io.to(arayanSocket).emit('arama_kabul_edildi', data.answer);
+    const targetSocket = onlineUsers.get(String(data.to));
+    if (targetSocket) {
+      io.to(targetSocket).emit('arama_kabul_edildi', data.answer);
     }
   });
 
-  // 4. ICE ADAYLARI (AĞ YOLU BULMA)
+  // 4. ICE CANDIDATE (BAĞLANTI YOLU)
   socket.on('ice_candidate', (data) => {
-    const hedefSocket = onlineUsers.get(parseInt(data.to));
-    if (hedefSocket) {
-      io.to(hedefSocket).emit('ice_candidate', data.candidate);
+    const targetSocket = onlineUsers.get(String(data.to));
+    if (targetSocket) {
+      io.to(targetSocket).emit('ice_candidate', data.candidate);
     }
   });
 
-  // 5. ARAMAYI SONLANDIRMA
+  // 5. KAPAT
   socket.on('aramayi_kapat', (data) => {
-    const hedefSocket = onlineUsers.get(parseInt(data.to));
-    if (hedefSocket) {
-      io.to(hedefSocket).emit('arama_kapandi');
+    const targetSocket = onlineUsers.get(String(data.to));
+    if (targetSocket) {
+      io.to(targetSocket).emit('arama_kapandi');
     }
   });
 
   socket.on('disconnect', () => {
-    // Haritadan sil
     for (let [uid, sid] of onlineUsers.entries()) {
       if (sid === socket.id) {
         onlineUsers.delete(uid);
         break;
       }
     }
-    console.log('Kullanıcı ayrıldı');
-    io.emit('online_kullanicilar', Array.from(onlineUsers.keys()));
   });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`V-Chat Sunucusu ${PORT} portunda emrinizde Komutanım!`);
-});
+server.listen(PORT, () => console.log(`Sunucu ${PORT} portunda.`));
