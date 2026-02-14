@@ -113,26 +113,29 @@ io.on('connection', (socket) => {
     });
 
     // 5. BAĞLANTI KOPTUĞUNDA (Çıkış)
-    socket.on('disconnect', () => {
-        let disconnectedUserId = null;
-        
-        // Listeden kimin çıktığını bul
-        for (let [uid, sid] of onlineUsers.entries()) {
-            if (sid === socket.id) {
-                disconnectedUserId = uid;
-                onlineUsers.delete(uid); // Listeden sil
-                break;
-            }
+    
+// server.js içindeki disconnect bloğu
+socket.on('disconnect', () => {
+    let disconnectedUserId = null;
+    
+    for (let [uid, sid] of onlineUsers.entries()) {
+        if (sid === socket.id) {
+            disconnectedUserId = uid;
+            onlineUsers.delete(uid);
+            break;
         }
+    }
 
-        if (disconnectedUserId) {
-            console.log(`Kullanıcı ID: ${disconnectedUserId} ÇIKIŞ YAPTI.`);
-            // Herkese haber ver: "Bu kişi offline oldu"
-            io.emit('kullanici_durumu_guncelle', { userId: disconnectedUserId, status: 'offline' });
-        }
-    });
+    if (disconnectedUserId) {
+        console.log(`Kullanıcı ${disconnectedUserId} ÇIKIŞ YAPTI.`);
+        // HEMEN tüm kullanıcılara bu kişinin offline olduğunu bildir
+        io.emit('kullanici_durumu_guncelle', { 
+            userId: disconnectedUserId, 
+            status: 'offline' 
+        });
+    }
 });
-
+    
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Sunucu ${PORT} portunda dinlemede...`);
