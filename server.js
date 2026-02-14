@@ -1,46 +1,45 @@
-require('dotenv').config(); // Ayarları yükle
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const db = require('./config/db'); // Veritabanı bağlantısını içe aktar
 
-// MODÜLLERİ ÇAĞIR
-const profilRoutes = require('./routes/profil');
-const raporRoutes = require('./routes/raporlar');
-// const socketHandler = require('./sockets/aramaSocket'); // BUNU İPTAL ETTİK, KODU İÇERİ ALDIK
+// --- GÜVENLİ DB BAĞLANTISI ---
+let db;
+try {
+    db = require('./config/db'); 
+    console.log("✅ Veritabanı dosyası yüklendi.");
+} catch (e) {
+    console.error("⚠️ Veritabanı dosyası bulunamadı, sunucu DB'siz modda çalışacak.");
+    db = null;
+}
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json({ limit: '50mb' })); // Resimler için limiti artırdık
+app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
-// ROTALARI TANIMLA
-app.use('/api/profil', profilRoutes);
-app.use('/api/raporlar', raporRoutes);
+// Rotaları Güvenli Yükle
+try {
+    const profilRoutes = require('./routes/profil');
+    app.use('/api/profil', profilRoutes);
+} catch (e) { console.error("⚠️ Profil rotaları yüklenemedi."); }
 
-app.get('/', (req, res) => {
-    res.send('V-QMSPRO Sunucusu Aktif! (Online Takip + Resim Destekli)');
-});
+app.get('/', (req, res) => { res.send('V-QMSPRO Sunucusu Çalışıyor 🚀'); });
 
-// SUNUCU VE SOCKET KURULUMU
 const server = http.createServer(app);
-const io = new Server(server, {
-    cors: { origin: "*", methods: ["GET", "POST"] }
-});
+const io = new Server(server, { cors: { origin: "*" } });
 
-// --- HAFIZA (KİM ONLİNE?) ---
-// Burası sunucunun beynidir. Kimin hangi soket ID'sine sahip olduğunu tutar.
 let onlineUsers = new Map(); 
 
 io.on('connection', (socket) => {
-    console.log('Bir kullanıcı bağlandı:', socket.id);
+    console.log('Kullanıcı bağlandı:', socket.id);
 
-    // --- YENİ: TÜM MESAJ GEÇMİŞİNİ GETİR ---
+    // GEÇMİŞ MESAJLARI YÜKLE
     socket.on('eski_mesajlari_yukle', async (data) => {
+        if (!db) return;
         try {
-            // mesajlar tablosundan iki kullanıcı arasındaki tüm geçmişi çek
             const [rows] = await db.execute(
                 `SELECT * FROM mesajlar 
                  WHERE (gonderen_id = ? AND alici_id = ?) 
@@ -49,95 +48,41 @@ io.on('connection', (socket) => {
                 [data.myId, data.hedefId, data.hedefId, data.myId]
             );
             socket.emit('eski_mesajlar', rows);
-        } catch (err) {
-            console.error("Geçmiş mesajlar yüklenirken hata:", err);
-        }
+        } catch (err) { console.error(err); }
     });
 
-    // 1. KULLANICI GİRİŞ YAPTIĞINDA
     socket.on('giris_yap', (userId) => {
         onlineUsers.set(String(userId), socket.id);
-        console.log(`Kullanıcı ID: ${userId} şimdi ONLİNE.`);
-        
-        // Herkese haber ver: "Bu kişi online oldu"
         io.emit('kullanici_durumu_guncelle', { userId: userId, status: 'online' });
     });
 
-    // 2. DURUM SORGULAMA (Android: "Şu kişi online mı?")
     socket.on('durum_sorgula', (hedefId) => {
         const isOnline = onlineUsers.has(String(hedefId));
-        // Sadece soran kişiye cevap dön
-        socket.emit('durum_cevabi', { 
-            userId: hedefId,
-            status: isOnline ? 'online' : 'offline' 
-        });
+        socket.emit('durum_cevabi', { userId: hedefId, status: isOnline ? 'online' : 'offline' });
     });
 
-    // 3. MESAJ VE RESİM GÖNDERME (Veritabanı Kaydı Dahil)
     socket.on('mesaj_gonder', async (data) => {
-        // data içinde: gonderen_id, alici_id, mesaj, image_data (veya dosya) var
-        console.log(`Mesaj: ${data.gonderen_id} -> ${data.alici_id}`);
-
-        try {
-            // Veritabanına kaydet: gonderen_id, alici_id, mesaj, dosya, dosya_tipi
-            await db.execute(
-                "INSERT INTO mesajlar (gonderen_id, alici_id, mesaj, dosya, dosya_tipi) VALUES (?, ?, ?, ?, ?)",
-                [
-                    data.gonderen_id, 
-                    data.alici_id, 
-                    data.mesaj || "", 
-                    data.image_data || null, // Base64 veya dosya yolu buraya
-                    data.image_data ? 'image' : 'text' // dosya_tipi sütunu
-                ]
-            );
-
-            const hedefSocketId = onlineUsers.get(String(data.alici_id));
-
-            if (hedefSocketId) {
-                // Hedef online ise direkt gönder
-                io.to(hedefSocketId).emit('yeni_mesaj', data);
-            } else {
-                console.log('Hedef kullanıcı çevrimdışı.');
-            }
-        } catch (err) {
-            console.error("Mesaj kaydedilirken hata oluştu:", err);
+        if (db) {
+            try {
+                await db.execute(
+                    "INSERT INTO mesajlar (gonderen_id, alici_id, mesaj, dosya, dosya_tipi) VALUES (?, ?, ?, ?, ?)",
+                    [data.gonderen_id, data.alici_id, data.mesaj, data.image_data, data.image_data ? 'image' : 'text']
+                );
+            } catch (err) { console.error(err); }
         }
+        
+        const hedefSocketId = onlineUsers.get(String(data.alici_id));
+        if (hedefSocketId) io.to(hedefSocketId).emit('yeni_mesaj', data);
     });
 
-    // 4. "YAZIYOR..." ÖZELLİĞİ
-    socket.on('yaziyor_basladi', (data) => {
-        const hedefSocketId = onlineUsers.get(String(data.target_id));
-        if (hedefSocketId) {
-            io.to(hedefSocketId).emit('yaziyor_durumu', { typing: true });
-        }
-    });
-
-    // 5. BAĞLANTI KOPTUĞUNDA (Çıkış)
-    
-// server.js içindeki disconnect bloğu
-socket.on('disconnect', () => {
-    let disconnectedUserId = null;
-    
-    for (let [uid, sid] of onlineUsers.entries()) {
-        if (sid === socket.id) {
-            disconnectedUserId = uid;
+    socket.on('disconnect', () => {
+        let uid = [...onlineUsers.entries()].find(([k, v]) => v === socket.id)?.[0];
+        if (uid) {
             onlineUsers.delete(uid);
-            break;
+            io.emit('kullanici_durumu_guncelle', { userId: uid, status: 'offline' });
         }
-    }
+    });
+});
 
-    if (disconnectedUserId) {
-        console.log(`Kullanıcı ${disconnectedUserId} ÇIKIŞ YAPTI.`);
-        // HEMEN tüm kullanıcılara bu kişinin offline olduğunu bildir
-        io.emit('kullanici_durumu_guncelle', { 
-            userId: disconnectedUserId, 
-            status: 'offline' 
-        });
-    }
-});
-    
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Sunucu ${PORT} portunda dinlemede...`);
-});
-                
+server.listen(PORT, () => { console.log(`Sunucu ${PORT} portunda!`); });
