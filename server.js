@@ -4,6 +4,7 @@ const http = require('http');
 const { Server } = require("socket.io");
 const bodyParser = require('body-parser');
 const cors = require('cors');
+const db = require('./config/db'); // MySQL bağlantı dosyan (pool.promise() kullanan)
 
 // MODÜLLERİ ÇAĞIR
 const profilRoutes = require('./routes/profil');
@@ -20,7 +21,7 @@ app.use('/api/profil', profilRoutes);
 app.use('/api/raporlar', raporRoutes);
 
 app.get('/', (req, res) => {
-    res.send('V-QMSPRO Sunucusu Aktif! (Online Takip + Resim Destekli)');
+    res.send('V-QMSPRO Sunucusu Aktif! (Online Takip + Resim Destekli + Veritabanı Kayıtlı)');
 });
 
 // SUNUCU VE SOCKET KURULUMU
@@ -35,6 +36,23 @@ let onlineUsers = new Map();
 
 io.on('connection', (socket) => {
     console.log('Bir kullanıcı bağlandı:', socket.id);
+
+    // --- YENİ: TÜM MESAJ GEÇMİŞİNİ YÜKLE ---
+    socket.on('eski_mesajlari_yukle', async (data) => {
+        try {
+            // İki kullanıcı arasındaki tüm mesajları (limit olmadan) getiriyoruz
+            const [rows] = await db.execute(
+                `SELECT * FROM messages 
+                 WHERE (gonderen_id = ? AND alici_id = ?) 
+                 OR (gonderen_id = ? AND alici_id = ?) 
+                 ORDER BY tarih ASC`,
+                [data.myId, data.hedefId, data.hedefId, data.myId]
+            );
+            socket.emit('eski_mesajlar', rows);
+        } catch (err) {
+            console.error("Veritabanından geçmiş çekilirken hata oluştu:", err);
+        }
+    });
 
     // 1. KULLANICI GİRİŞ YAPTIĞINDA
     socket.on('giris_yap', (userId) => {
@@ -55,19 +73,29 @@ io.on('connection', (socket) => {
         });
     });
 
-    // 3. MESAJ VE RESİM GÖNDERME
-    socket.on('mesaj_gonder', (data) => {
+    // 3. MESAJ VE RESİM GÖNDERME (Veritabanı Kaydı Eklendi)
+    socket.on('mesaj_gonder', async (data) => {
         // data içinde: gonderen_id, alici_id, mesaj, image_data (opsiyonel) var
         console.log(`Mesaj: ${data.gonderen_id} -> ${data.alici_id}`);
 
-        const hedefSocketId = onlineUsers.get(String(data.alici_id));
+        try {
+            // VERİTABANINA KAYDET (Fotoğraf, video veya metin fark etmeksizin image_data içinde tutulur)
+            await db.execute(
+                "INSERT INTO messages (gonderen_id, alici_id, mesaj, image_data) VALUES (?, ?, ?, ?)",
+                [data.gonderen_id, data.alici_id, data.mesaj, data.image_data || null]
+            );
 
-        if (hedefSocketId) {
-            // Hedef online ise direkt gönder
-            io.to(hedefSocketId).emit('yeni_mesaj', data);
-        } else {
-            console.log('Hedef kullanıcı çevrimdışı.');
-            // İleride buraya bildirim (Push Notification) eklenebilir.
+            const hedefSocketId = onlineUsers.get(String(data.alici_id));
+
+            if (hedefSocketId) {
+                // Hedef online ise direkt gönder
+                io.to(hedefSocketId).emit('yeni_mesaj', data);
+            } else {
+                console.log('Hedef kullanıcı çevrimdışı.');
+                // İleride buraya bildirim (Push Notification) eklenebilir.
+            }
+        } catch (err) {
+            console.error("Mesaj veritabanına kaydedilirken hata:", err);
         }
     });
 
