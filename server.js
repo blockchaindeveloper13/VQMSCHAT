@@ -16,6 +16,15 @@ app.use(bodyParser.urlencoded({ limit: '100mb', extended: true }));
 // Ana sayfa testi
 app.get('/', (req, res) => { res.send('V-QMSPRO Chat Sunucusu Aktif! 🚀'); });
 
+// ==========================================
+// API YÖNLENDİRMELERİ (BUNLAR EKSİKTİ)
+// ==========================================
+app.use('/api/raporlar', require('./routes/raporlar')); 
+
+// Eğer profil.js dosyan routes klasöründe hazırsa alttaki satırı da aktif et (değilse silinebilir):
+app.use('/api/profil', require('./routes/profil')); 
+
+
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
@@ -29,13 +38,11 @@ io.on('connection', (socket) => {
     socket.on('giris_yap', (userId) => {
         onlineUsers.set(String(userId), socket.id);
         console.log(`✅ Kullanıcı Giriş Yaptı: ${userId}`);
-        // Herkese haber ver (İsteğe bağlı, trafik yapmasın diye sadece ilgiliye dönebiliriz)
         io.emit('kullanici_durumu', { userId: userId, status: 'online' });
     });
 
     socket.on('durum_sorgula', (hedefId) => {
         const isOnline = onlineUsers.has(String(hedefId));
-        // Sadece soran kişiye cevap dön
         socket.emit('durum_cevabi', { 
             userId: hedefId, 
             status: isOnline ? 'online' : 'offline' 
@@ -44,18 +51,12 @@ io.on('connection', (socket) => {
 
     // --- 2. MESAJ GÖNDERME (SPINNER BURADA YÖNETİLİYOR) ---
     socket.on('mesaj_gonder', async (data) => {
-        // Data içeriği: { gonderen_id, alici_id, mesaj, image_data, file_type, tempId }
-        // tempId: Android tarafında üretilen geçici kimlik (Spinner'ı durdurmak için şifre)
-        
         const { gonderen_id, alici_id, mesaj, image_data, file_type, tempId } = data;
         let dbId = 0;
 
-        // A) Veritabanına Kaydet
         if (db) {
             try {
-                // Dosya tipi boşsa 'text' kabul et, doluysa (video/pdf/image) onu yaz
                 const tip = file_type || (image_data ? 'image' : 'text');
-                
                 const [result] = await db.execute(
                     "INSERT INTO mesajlar (gonderen_id, alici_id, mesaj, dosya, dosya_tipi) VALUES (?, ?, ?, ?, ?)",
                     [gonderen_id, alici_id, mesaj, image_data || null, tip]
@@ -65,19 +66,15 @@ io.on('connection', (socket) => {
 
             } catch (err) { 
                 console.error("❌ DB Hatası:", err); 
-                // Hata olsa bile kullanıcıya "Hata oluştu" diyebilmek için aşağı devam ediyoruz
             }
         }
 
-        // B) GÖNDERENE "BEN ALDIM" DE (Spinner'ı Durdurur)
-        // Android bu 'mesaj_iletildi' sinyalini alınca o dönen şeyi gizleyecek.
         socket.emit('mesaj_iletildi', { 
-            tempId: tempId, // Hangi mesajın gittiğini bildiriyoruz
+            tempId: tempId, 
             serverId: dbId, 
             success: true 
         });
 
-        // C) ALICIYA İLET
         const hedefSocketId = onlineUsers.get(String(alici_id));
         if (hedefSocketId) {
             io.to(hedefSocketId).emit('yeni_mesaj', {
@@ -98,11 +95,10 @@ io.on('connection', (socket) => {
             console.log(`📞 Arama Başladı: ${data.callerName} -> ${data.hedefId}`);
             io.to(hedefSocketId).emit('gelen_arama', {
                 caller_name: data.callerName,
-                call_type: data.callType, // 'video' veya 'voice'
+                call_type: data.callType, 
                 caller_id: data.myId
             });
         } else {
-            // Kullanıcı yoksa arayana bildir
             socket.emit('arama_hatasi', { mesaj: "Kullanıcı çevrimdışı" });
         }
     });
@@ -122,7 +118,6 @@ io.on('connection', (socket) => {
 
     // --- 5. ÇIKIŞ ---
     socket.on('disconnect', () => {
-        // Map'ten kullanıcıyı bul ve sil
         let uid = [...onlineUsers.entries()].find(([k, v]) => v === socket.id)?.[0];
         if (uid) {
             onlineUsers.delete(uid);
