@@ -44,6 +44,31 @@ router.get('/verimlilik', async (req, res) => {
 
 module.exports = router;
 
+// ---------------------------------------------------------
+// KALİTE KONTROL DETAY SAYFASI İÇİN API KAPISI
+// ---------------------------------------------------------
+router.get('/kalite-detay/:id', async (req, res) => {
+    try {
+        const reportId = req.params.id;
+        
+        // Önce Ana Rapor verisini çek
+        const [anaRows] = await db.query('SELECT * FROM reports WHERE id = ?', [reportId]);
+        if (anaRows.length === 0) return res.status(404).json({ error: 'Rapor bulunamadı' });
+        
+        // Sonra Detay (Kusur/Numune) Tablosunu çek
+        const [detayRows] = await db.query('SELECT defect_name, detailed_data, defect_type FROM report_details WHERE report_id = ? ORDER BY id ASC', [reportId]);
+
+        // Paketleyip Android'e gönder
+        res.json({
+            anaData: anaRows[0],
+            detayListesi: detayRows
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Kalite detayları alınamadı' });
+    }
+});
+
+
 // raporlar.js içine eklenecek
 router.get('/uretim-detay/:id', async (req, res) => {
     try {
