@@ -1,10 +1,37 @@
 const express = require('express');
 const router = express.Router();
-// Veritabanı bağlantını kendi dosya yoluna göre ayarla (Örn: const db = require('../db');)
-const db = require('../config/db'); 
+const db = require('../config/db'); // Veritabanı bağlantısı
 
 // ==========================================
-// 1. ÜRETİM RAPORLARI LİSTESİ (Akıllı Sayfalama + Total Count)
+// 1. KALİTE RAPORLARI (404 Hatasını Çözen Eski Kapı)
+// ==========================================
+router.get('/kalite', async (req, res) => {
+    try {
+        // DİKKAT: Eğer veritabanındaki tablo adın farklıysa 'kalite_raporlari' kısmını değiştir!
+        const [rows] = await db.query("SELECT * FROM kalite_raporlari ORDER BY tarih DESC");
+        res.json(rows);
+    } catch (err) {
+        console.error("❌ Kalite Listesi Hatası:", err);
+        res.status(500).json({ error: 'Kalite raporları alınamadı' });
+    }
+});
+
+// ==========================================
+// 2. VERİMLİLİK RAPORLARI (Boş Ekranı Çözen Eski Kapı)
+// ==========================================
+router.get('/verimlilik', async (req, res) => {
+    try {
+        // DİKKAT: Eğer veritabanındaki tablo adın farklıysa 'verimlilik_raporlari' kısmını değiştir!
+        const [rows] = await db.query("SELECT * FROM verimlilik_raporlari ORDER BY created_at DESC");
+        res.json(rows);
+    } catch (err) {
+        console.error("❌ Verimlilik Listesi Hatası:", err);
+        res.status(500).json({ error: 'Verimlilik raporları alınamadı' });
+    }
+});
+
+// ==========================================
+// 3. ÜRETİM RAPORLARI LİSTESİ (Akıllı Sayfalama + Total Count)
 // ==========================================
 router.get('/uretim', async (req, res) => {
     try {
@@ -29,7 +56,7 @@ router.get('/uretim', async (req, res) => {
 });
 
 // ==========================================
-// 2. ÜRETİM RAPORU DETAYI (404 Hatasını Çözen Kapı!)
+// 4. ÜRETİM RAPORU DETAYI (Detay Sayfası Kapısı)
 // ==========================================
 router.get('/uretim-detay/:id', async (req, res) => {
     const { id } = req.params;
@@ -52,7 +79,7 @@ router.get('/uretim-detay/:id', async (req, res) => {
 });
 
 // ==========================================
-// 3. GÖRÜNTÜLENME (MAVİ TIK) SİNYALİNİ KAYDET
+// 5. GÖRÜNTÜLENME (MAVİ TIK) SİNYALİNİ KAYDET
 // ==========================================
 router.post('/goruntulenme/ekle', async (req, res) => {
     const { rapor_turu, rapor_id, kullanici_adi } = req.body;
@@ -63,14 +90,13 @@ router.post('/goruntulenme/ekle', async (req, res) => {
         
         res.json({ success: true });
     } catch (err) {
-        // DÜZELTME: Büyük 'C' yerine küçük 'c' kullandık ki sunucu çökmesin!
         console.error("❌ Görüldü ekleme hatası:", err);
         res.status(500).json({ error: 'İşlem başarısız' });
     }
 });
 
 // ==========================================
-// 4. KİMLER GÖRDÜ? POPUP'I (+3 Saat Ayarlı)
+// 6. KİMLER GÖRDÜ? POPUP'I (+3 Saat Ayarlı)
 // ==========================================
 router.get('/goruntulenme/:turu/:id', async (req, res) => {
     const { turu, id } = req.params;
