@@ -24,7 +24,6 @@ router.get('/uretim', async (req, res) => {
     }
 });
 
-// 3. Kalite Rapor Listesi (eski Java kodundaki 'reports' tablosu)
 // 3. Kalite Rapor Listesi (SAYFALAMA EKLENDİ)
 router.get('/kalite', async (req, res) => {
     try {
@@ -43,7 +42,6 @@ router.get('/kalite', async (req, res) => {
         res.status(500).json({ error: 'Kalite raporları alınamadı' });
     }
 });
-
 
 // 4. Verimlilik Rapor Listesi
 router.get('/verimlilik', async (req, res) => {
@@ -84,6 +82,47 @@ router.get('/kalite-detay/:id', async (req, res) => {
     } catch (err) {
         console.error("❌ Kalite Detay SQL Hatası:", err);
         res.status(500).json({ error: 'Kalite detayları alınamadı' });
+    }
+});
+
+// ==========================================
+// 🔔 BİLDİRİMLER VE MAVİ TIK (GÖRENLER) API 
+// ==========================================
+
+// 7. Android'e son bildirimleri gönder
+router.get('/bildirimler', async (req, res) => {
+    try {
+        const [rows] = await db.query('SELECT * FROM bildirimler ORDER BY tarih DESC LIMIT 50');
+        res.json(rows);
+    } catch (err) {
+        console.error("❌ Bildirim çekme hatası:", err);
+        res.status(500).json({ error: 'Bildirimler alınamadı' });
+    }
+});
+
+// 8. Telefondan biri rapora girince (Sessizce) Görüldü at!
+router.post('/goruntulenme/ekle', async (req, res) => {
+    const { rapor_turu, rapor_id, kullanici_adi } = req.body;
+    try {
+        // IGNORE: Zaten görmüşse hata verme, boş geç
+        const query = `INSERT IGNORE INTO rapor_goruntulenme (rapor_turu, rapor_id, kullanici_adi) VALUES (?, ?, ?)`;
+        await db.query(query, [rapor_turu, rapor_id, kullanici_adi]);
+        res.json({ success: true, message: 'Görüldü işaretlendi.' });
+    } catch (err) {
+        console.error("❌ Görüldü hatası:", err);
+        res.status(500).json({ error: 'İşlem başarısız' });
+    }
+});
+
+// 9. Android listedeki 'Göz 👁️' ikonuna basınca görenleri gönder
+router.get('/goruntulenme/:turu/:id', async (req, res) => {
+    const { turu, id } = req.params;
+    try {
+        const [rows] = await db.query('SELECT kullanici_adi, tarih FROM rapor_goruntulenme WHERE rapor_turu = ? AND rapor_id = ? ORDER BY tarih ASC', [turu, id]);
+        res.json(rows);
+    } catch (err) {
+        console.error("❌ Görenler çekme hatası:", err);
+        res.status(500).json({ error: 'Görenler alınamadı' });
     }
 });
 
