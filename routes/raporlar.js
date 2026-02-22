@@ -25,15 +25,25 @@ router.get('/uretim', async (req, res) => {
 });
 
 // 3. Kalite Rapor Listesi (eski Java kodundaki 'reports' tablosu)
+// 3. Kalite Rapor Listesi (SAYFALAMA EKLENDİ)
 router.get('/kalite', async (req, res) => {
     try {
-        const [rows] = await db.query('SELECT * FROM reports ORDER BY report_date DESC LIMIT 100');
+        // İstemciden (Android'den) sayfa numarasını al, yoksa 1. sayfa kabul et
+        const page = parseInt(req.query.page) || 1;
+        const limit = 30; // Her sayfada en fazla 30 rapor gönder
+        const offset = (page - 1) * limit;
+
+        // Veritabanından sıradaki 30 kaydı çek
+        const query = `SELECT * FROM reports ORDER BY report_date DESC LIMIT ${limit} OFFSET ${offset}`;
+        const [rows] = await db.query(query);
+        
         res.json(rows);
     } catch (err) {
         console.error("❌ Kalite Rapor SQL Hatası:", err);
         res.status(500).json({ error: 'Kalite raporları alınamadı' });
     }
 });
+
 
 // 4. Verimlilik Rapor Listesi
 router.get('/verimlilik', async (req, res) => {
