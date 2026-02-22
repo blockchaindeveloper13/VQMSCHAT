@@ -115,15 +115,25 @@ router.post('/goruntulenme/ekle', async (req, res) => {
 });
 
 // 9. Android listedeki 'Göz 👁️' ikonuna basınca görenleri gönder
+// Raporlar.js - 9. Metot (Görenleri Getir) sorgusunu bununla değiştir:
 router.get('/goruntulenme/:turu/:id', async (req, res) => {
     const { turu, id } = req.params;
     try {
-        const [rows] = await db.query('SELECT kullanici_adi, tarih FROM rapor_goruntulenme WHERE rapor_turu = ? AND rapor_id = ? ORDER BY tarih ASC', [turu, id]);
+        // DATE_ADD ile tarihe otomatik 3 saat ekliyoruz
+        const query = `
+            SELECT kullanici_adi, 
+            DATE_ADD(tarih, INTERVAL 3 HOUR) as tarih 
+            FROM rapor_goruntulenme 
+            WHERE rapor_turu = ? AND rapor_id = ? 
+            ORDER BY tarih ASC`;
+            
+        const [rows] = await db.query(query, [turu, id]);
         res.json(rows);
     } catch (err) {
         console.error("❌ Görenler çekme hatası:", err);
         res.status(500).json({ error: 'Görenler alınamadı' });
     }
 });
+
 
 module.exports = router;
