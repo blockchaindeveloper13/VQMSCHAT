@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 // Veritabanı bağlantını kendi dosya yoluna göre ayarla (Örn: const db = require('../db');)
-const db = require('../db'); 
+const db = require('../config/db'); 
 
 // ==========================================
 // 1. ÜRETİM RAPORLARI LİSTESİ (Akıllı Sayfalama + Total Count)
