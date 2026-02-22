@@ -7,25 +7,37 @@ const db = require('../config/db'); // Veritabanı bağlantısı
 // ==========================================
 router.get('/kalite', async (req, res) => {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = 20;
-        const offset = (page - 1) * limit;
-
-        const [rows] = await db.query("SELECT * FROM reports ORDER BY id DESC LIMIT ? OFFSET ?", [limit, offset]);
+        // PHP kodunda 'report_date' kullanılmış, sıralamayı 'id' veya 'report_date' ile yapıyoruz.
+        const [rows] = await db.query("SELECT * FROM reports ORDER BY id DESC");
         res.json(rows);
     } catch (err) {
         console.error("❌ Kalite Listesi Hatası:", err);
-        res.status(500).json({ error: 'Kalite raporları alınamadı' });
+        res.status(500).json({ error: 'Kalite listesi alınamadı' });
     }
 });
 
-// 404 HATASINI ÇÖZEN YENİ KAPI: Kalite Detay
+// ==========================================
+// 2. KALİTE DETAY (reports + report_details Tabloları)
+// ==========================================
+// PHP'deki $stmt_detay mantığını buraya kuruyoruz.
 router.get('/kalite-detay/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        const [rows] = await db.query("SELECT * FROM reports WHERE id = ?", [id]);
-        if (rows.length === 0) return res.status(404).json({ error: "Rapor bulunamadı" });
-        res.json(rows[0]);
+        // Ana rapor verisi
+        const [anaData] = await db.query("SELECT * FROM reports WHERE id = ?", [id]);
+        
+        // PHP'deki 'report_details' tablosundan kusurları çekiyoruz
+        const [detayListesi] = await db.query("SELECT * FROM report_details WHERE report_id = ? ORDER BY id ASC", [id]);
+        
+        if (anaData.length === 0) {
+            return res.status(404).json({ error: "Rapor bulunamadı" });
+        }
+        
+        // PHP'deki explode('|', ...) mantığını Android'de kolayca parse edebilmek için temiz gönderiyoruz
+        res.json({
+            anaData: anaData[0],
+            kusurlar: detayListesi
+        });
     } catch (err) {
         console.error("❌ Kalite Detay Hatası:", err);
         res.status(500).json({ error: "Sunucu hatası" });
