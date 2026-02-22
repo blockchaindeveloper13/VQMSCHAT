@@ -64,18 +64,36 @@ router.get('/verimlilik', async (req, res) => {
 });
 
 // 5. Üretim Detay Sayfası
-router.get('/uretim-detay/:id', async (req, res) => {
+// 1. LİSTELEME: Toplam sayıyı da gönderiyoruz
+router.get('/uretim', async (req, res) => {
     try {
-        const uretimId = req.params.id;
-        const [anaRows] = await db.query('SELECT * FROM uretim_ana WHERE id = ?', [uretimId]);
-        if (anaRows.length === 0) return res.status(404).json({ error: 'Rapor bulunamadı' });
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const offset = (page - 1) * limit;
+
+        // Toplam kaç rapor var? (Android'e sayfa sayısını söylemek için)
+        const [countResult] = await db.query("SELECT COUNT(*) as total FROM uretim_ana");
+        const totalCount = countResult[0].total;
+
+        const query = `SELECT * FROM uretim_ana ORDER BY tarih DESC LIMIT ${limit} OFFSET ${offset}`;
+        const [rows] = await db.query(query);
         
-        const [detayRows] = await db.query('SELECT * FROM uretim_detay WHERE uretim_id = ?', [uretimId]);
-        res.json({ anaData: anaRows[0], detayListesi: detayRows });
-    } catch (err) {
-        console.error("❌ Üretim Detay SQL Hatası:", err);
-        res.status(500).json({ error: 'Detaylar alınamadı' });
-    }
+        // Veriyi ve toplam sayıyı paketleyip gönderiyoruz
+        res.json({ data: rows, totalCount: totalCount });
+    } catch (err) { res.status(500).send(err); }
+});
+
+// 2. KAYIT: Yeni rapor gelince bildirimlere ekle
+router.post('/uretim/ekle', async (req, res) => {
+    // ... senin mevcut kayıt kodların ...
+    try {
+        // Rapor başarıyla kaydedildikten sonra bu kodu ekle:
+        const bildirimSql = `INSERT INTO bildirimler (baslik, mesaj, tarih, rapor_turu) 
+                             VALUES (?, ?, NOW(), ?)`;
+        await db.query(bildirimSql, ["Yeni Üretim Raporu", "Yeni bir üretim raporu sisteme eklendi.", "uretim"]);
+        
+        res.json({ success: true });
+    } catch (err) { res.status(500).send(err); }
 });
 
 // 6. Kalite Detay Sayfası
