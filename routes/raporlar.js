@@ -14,9 +14,17 @@ router.get('/gunluk', async (req, res) => {
 });
 
 // 2. Üretim Rapor Listesi
+// raporlar.js içindeki Üretim Raporu Listeleme (GÜNCELLENDİ)
 router.get('/uretim', async (req, res) => {
     try {
-        const [rows] = await db.query('SELECT * FROM uretim_ana ORDER BY tarih DESC LIMIT 100');
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20; // Android'den gelen limit (20)
+        const offset = (page - 1) * limit;
+
+        // SQL sorgusuna LIMIT ve OFFSET ekleyerek sadece o sayfanın verisini çekiyoruz
+        const query = `SELECT * FROM uretim_ana ORDER BY tarih DESC LIMIT ${limit} OFFSET ${offset}`;
+        const [rows] = await db.query(query);
+        
         res.json(rows);
     } catch (err) {
         console.error("❌ Üretim Rapor SQL Hatası:", err);
