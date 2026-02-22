@@ -110,13 +110,18 @@ router.get('/uretim-detay/:id', async (req, res) => {
 router.post('/goruntulenme/ekle', async (req, res) => {
     const { rapor_turu, rapor_id, kullanici_adi } = req.body;
     try {
-        // Hata vermesin diye tarih (NOW()) sütununu da güvenliğe aldık
-        const insertQuery = `INSERT INTO rapor_goruntulenme (rapor_turu, rapor_id, kullanici_adi, tarih) VALUES (?, ?, ?, NOW())`;
+        // İŞTE SİHİRLİ KOD BURASI: "ON DUPLICATE KEY UPDATE"
+        // Eğer Vedat bu raporu daha önce gördüyse çökme, sadece "tarih" saatini şu anki saate (NOW) çek!
+        const insertQuery = `
+            INSERT INTO rapor_goruntulenme (rapor_turu, rapor_id, kullanici_adi, tarih) 
+            VALUES (?, ?, ?, NOW()) 
+            ON DUPLICATE KEY UPDATE tarih = NOW()
+        `;
+        
         await db.query(insertQuery, [rapor_turu, String(rapor_id), kullanici_adi]);
         
         res.json({ success: true });
     } catch (err) {
-        // İŞTE BURASI: Eğer tablo yoksa veya bir sorun varsa Heroku loglarında bas bas bağıracak!
         console.error("❌ MAVİ TIK 500 PATLAMASI:", err.message);
         res.status(500).json({ error: 'İşlem başarısız', detay: err.message });
     }
