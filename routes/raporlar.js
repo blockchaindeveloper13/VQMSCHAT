@@ -3,12 +3,11 @@ const router = express.Router();
 const db = require('../config/db'); // Veritabanı bağlantısı
 
 // ==========================================
-// 1. KALİTE RAPORLARI (404 Hatasını Çözen Eski Kapı)
+// 1. KALİTE RAPORLARI (Tablo adı 'reports' olarak düzeltildi!)
 // ==========================================
 router.get('/kalite', async (req, res) => {
     try {
-        // DİKKAT: Eğer veritabanındaki tablo adın farklıysa 'kalite_raporlari' kısmını değiştir!
-        const [rows] = await db.query("SELECT * FROM kalite_raporlari ORDER BY tarih DESC");
+        const [rows] = await db.query("SELECT * FROM reports ORDER BY tarih DESC");
         res.json(rows);
     } catch (err) {
         console.error("❌ Kalite Listesi Hatası:", err);
@@ -17,12 +16,11 @@ router.get('/kalite', async (req, res) => {
 });
 
 // ==========================================
-// 2. VERİMLİLİK RAPORLARI (Boş Ekranı Çözen Eski Kapı)
+// 2. VERİMLİLİK RAPORLARI (Tablo adı 'uretim_verimlilik' olarak düzeltildi!)
 // ==========================================
 router.get('/verimlilik', async (req, res) => {
     try {
-        // DİKKAT: Eğer veritabanındaki tablo adın farklıysa 'verimlilik_raporlari' kısmını değiştir!
-        const [rows] = await db.query("SELECT * FROM verimlilik_raporlari ORDER BY created_at DESC");
+        const [rows] = await db.query("SELECT * FROM uretim_verimlilik ORDER BY created_at DESC");
         res.json(rows);
     } catch (err) {
         console.error("❌ Verimlilik Listesi Hatası:", err);
@@ -39,15 +37,12 @@ router.get('/uretim', async (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const offset = (page - 1) * limit;
 
-        // Toplam rapor sayısını al (Android'deki 1-2-3 butonları için şart)
         const [countResult] = await db.query("SELECT COUNT(*) as total FROM uretim_ana");
         const totalCount = countResult[0].total;
 
-        // Sadece o sayfanın verilerini çek
         const query = `SELECT * FROM uretim_ana ORDER BY tarih DESC LIMIT ${limit} OFFSET ${offset}`;
         const [rows] = await db.query(query);
         
-        // Veriyi ve toplam sayıyı Android'e gönder
         res.json({ data: rows, totalCount: totalCount });
     } catch (err) {
         console.error("❌ Üretim Rapor Listesi Hatası:", err);
@@ -56,7 +51,7 @@ router.get('/uretim', async (req, res) => {
 });
 
 // ==========================================
-// 4. ÜRETİM RAPORU DETAYI (Detay Sayfası Kapısı)
+// 4. ÜRETİM RAPORU DETAYI
 // ==========================================
 router.get('/uretim-detay/:id', async (req, res) => {
     const { id } = req.params;
@@ -84,7 +79,6 @@ router.get('/uretim-detay/:id', async (req, res) => {
 router.post('/goruntulenme/ekle', async (req, res) => {
     const { rapor_turu, rapor_id, kullanici_adi } = req.body;
     try {
-        // Raporu gördüğüne dair veritabanına kayıt atıyoruz
         const insertQuery = `INSERT INTO rapor_goruntulenme (rapor_turu, rapor_id, kullanici_adi) VALUES (?, ?, ?)`;
         await db.query(insertQuery, [rapor_turu, rapor_id, kullanici_adi]);
         
@@ -101,7 +95,6 @@ router.post('/goruntulenme/ekle', async (req, res) => {
 router.get('/goruntulenme/:turu/:id', async (req, res) => {
     const { turu, id } = req.params;
     try {
-        // DATE_ADD ile tarihe otomatik 3 saat (Türkiye Saati) ekliyoruz
         const query = `
             SELECT kullanici_adi, 
             DATE_ADD(tarih, INTERVAL 3 HOUR) as tarih 
