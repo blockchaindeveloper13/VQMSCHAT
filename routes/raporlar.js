@@ -3,74 +3,74 @@ const router = express.Router();
 const db = require('../config/db'); // Veritabanı bağlantısı
 
 // ==========================================
-// 1. KALİTE RAPORLARI (Hata 'id' ile çözüldü)
+// 1. KALİTE RAPORLARI (Android'in ?page=1 talebine uyarlandı)
 // ==========================================
 router.get('/kalite', async (req, res) => {
     try {
-        // PHP kodunda 'report_date' kullanılmış, sıralamayı 'id' veya 'report_date' ile yapıyoruz.
-        const [rows] = await db.query("SELECT * FROM reports ORDER BY id DESC");
+        const page = parseInt(req.query.page) || 1;
+        const limit = 20;
+        const offset = (page - 1) * limit;
+
+        const [rows] = await db.query("SELECT * FROM reports ORDER BY id DESC LIMIT ? OFFSET ?", [limit, offset]);
         res.json(rows);
     } catch (err) {
-        console.error("❌ Kalite Listesi Hatası:", err);
-        res.status(500).json({ error: 'Kalite listesi alınamadı' });
+        console.error("❌ Kalite Listesi SQL Hatası:", err.message);
+        res.status(500).json({ error: 'Kalite listesi alınamadı', detay: err.message });
     }
 });
 
 // ==========================================
-// 2. KALİTE DETAY (reports + report_details Tabloları)
+// 2. KALİTE DETAY (Kayıp satırları Android'e 'detayListesi' adıyla gönderir)
 // ==========================================
-// PHP'deki $stmt_detay mantığını buraya kuruyoruz.
 router.get('/kalite-detay/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        // Ana rapor verisi
         const [anaData] = await db.query("SELECT * FROM reports WHERE id = ?", [id]);
-        
-        // PHP'deki 'report_details' tablosundan kusurları çekiyoruz
         const [detayListesi] = await db.query("SELECT * FROM report_details WHERE report_id = ? ORDER BY id ASC", [id]);
         
         if (anaData.length === 0) {
             return res.status(404).json({ error: "Rapor bulunamadı" });
         }
         
-        // PHP'deki explode('|', ...) mantığını Android'de kolayca parse edebilmek için temiz gönderiyoruz
+        // Android tarafı 'detayListesi' aradığı için ismini tam eşledik
         res.json({
             anaData: anaData[0],
-            kusurlar: detayListesi
+            detayListesi: detayListesi
         });
     } catch (err) {
-        console.error("❌ Kalite Detay Hatası:", err);
-        res.status(500).json({ error: "Sunucu hatası" });
+        console.error("❌ Kalite Detay SQL Hatası:", err.message);
+        res.status(500).json({ error: "Sunucu hatası", detay: err.message });
     }
 });
+
 // ==========================================
-// 2. VERİMLİLİK RAPORLARI
+// 3. VERİMLİLİK RAPORLARI
 // ==========================================
 router.get('/verimlilik', async (req, res) => {
     try {
         const [rows] = await db.query("SELECT * FROM uretim_verimlilik ORDER BY id DESC");
         res.json(rows);
     } catch (err) {
-        console.error("❌ Verimlilik Listesi Hatası:", err);
+        console.error("❌ Verimlilik Listesi Hatası:", err.message);
         res.status(500).json({ error: 'Verimlilik raporları alınamadı' });
     }
 });
 
 // ==========================================
-// 3. GÜNLÜK RAPORLAR (404 Hatasını Bitiren Kapı)
+// 4. GÜNLÜK RAPORLAR 
 // ==========================================
 router.get('/gunluk', async (req, res) => {
     try {
         const [rows] = await db.query("SELECT * FROM gunluk_raporlar ORDER BY id DESC");
         res.json(rows);
     } catch (err) {
-        console.error("❌ Günlük Rapor Hatası:", err);
+        console.error("❌ Günlük Rapor Hatası:", err.message);
         res.status(500).json({ error: 'Günlük raporlar alınamadı' });
     }
 });
 
 // ==========================================
-// 4. ÜRETİM RAPORLARI (Akıllı Sayfalama)
+// 5. ÜRETİM RAPORLARI (Akıllı Sayfalama)
 // ==========================================
 router.get('/uretim', async (req, res) => {
     try {
@@ -86,7 +86,7 @@ router.get('/uretim', async (req, res) => {
         
         res.json({ data: rows, totalCount: totalCount });
     } catch (err) {
-        console.error("❌ Üretim Rapor Listesi Hatası:", err);
+        console.error("❌ Üretim Rapor Listesi Hatası:", err.message);
         res.status(500).json({ error: 'Üretim raporları alınamadı' });
     }
 });
@@ -99,21 +99,26 @@ router.get('/uretim-detay/:id', async (req, res) => {
         if (anaData.length === 0) return res.status(404).json({ error: "Rapor bulunamadı" });
         res.json({ anaData: anaData[0], detayListesi: detayListesi });
     } catch (err) {
+        console.error("❌ Üretim Detay Hatası:", err.message);
         res.status(500).json({ error: "Sunucu hatası" });
     }
 });
 
 // ==========================================
-// 5. MAVİ TIK VE BİLDİRİM KAYITLARI
+// 6. MAVİ TIK MOTORU (500 HATASININ ASIL MERKEZİ)
 // ==========================================
 router.post('/goruntulenme/ekle', async (req, res) => {
     const { rapor_turu, rapor_id, kullanici_adi } = req.body;
     try {
-        const insertQuery = `INSERT INTO rapor_goruntulenme (rapor_turu, rapor_id, kullanici_adi) VALUES (?, ?, ?)`;
-        await db.query(insertQuery, [rapor_turu, rapor_id, kullanici_adi]);
+        // Hata vermesin diye tarih (NOW()) sütununu da güvenliğe aldık
+        const insertQuery = `INSERT INTO rapor_goruntulenme (rapor_turu, rapor_id, kullanici_adi, tarih) VALUES (?, ?, ?, NOW())`;
+        await db.query(insertQuery, [rapor_turu, String(rapor_id), kullanici_adi]);
+        
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: 'İşlem başarısız' });
+        // İŞTE BURASI: Eğer tablo yoksa veya bir sorun varsa Heroku loglarında bas bas bağıracak!
+        console.error("❌ MAVİ TIK 500 PATLAMASI:", err.message);
+        res.status(500).json({ error: 'İşlem başarısız', detay: err.message });
     }
 });
 
@@ -121,10 +126,11 @@ router.get('/goruntulenme/:turu/:id', async (req, res) => {
     const { turu, id } = req.params;
     try {
         const query = `SELECT kullanici_adi, DATE_ADD(tarih, INTERVAL 3 HOUR) as tarih FROM rapor_goruntulenme WHERE rapor_turu = ? AND rapor_id = ? ORDER BY tarih ASC`;
-        const [rows] = await db.query(query, [turu, id]);
+        const [rows] = await db.query(query, [turu, String(id)]);
         res.json(rows);
     } catch (err) {
-        res.status(500).json({ error: 'Görenler alınamadı' });
+        console.error("❌ Kimler Gördü SQL Hatası:", err.message);
+        res.status(500).json({ error: 'Görenler alınamadı', detay: err.message });
     }
 });
 
