@@ -31,6 +31,21 @@ const io = new Server(server, { cors: { origin: "*" } });
 app.set('socketio', io);
 // PHP'den gelen bildirim sinyalini yakalayan profesyonel rota
 app.post('/api/bildirim-tetikle', async (req, res) => {
+    try {
+        if (db) {
+            // Son 50 bildirimi en yeniden en eskiye çekiyoruz
+            const [rows] = await db.execute(
+                "SELECT id, baslik, mesaj, tarih, tur, rapor_id FROM bildirimler ORDER BY id DESC LIMIT 50"
+            );
+            res.json(rows);
+        } else {
+            res.status(500).json({ error: "Veritabanı bağlantısı yok" });
+        }
+    } catch (err) {
+        console.error("❌ Bildirim Çekme Hatası:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
     const { tur, mesaj } = req.body;
 
     // 1. Profesyonel Başlık Belirleme
