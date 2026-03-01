@@ -27,6 +27,54 @@ app.use('/api/profil', require('./routes/profil'));
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
+// PHP'den gelen bildirim sinyalini yakalayan profesyonel rota
+app.post('/api/bildirim-tetikle', async (req, res) => {
+    const { tur, mesaj } = req.body;
+
+    // 1. Profesyonel Başlık Belirleme
+    let baslik = "VQMS PRO Bilgilendirme";
+    if (tur === "kalite") baslik = "Kalite Raporu Paylaşıldı";
+    else if (tur === "uretim") baslik = "Üretim Raporu Paylaşıldı";
+    else if (tur === "verimlilik") baslik = "Verimlilik Raporu Paylaşıldı";
+    else if (tur === "gunluk") baslik = "Günlük Rapor Paylaşıldı";
+
+    // 2. Türkiye Saati ve Tarihi Oluşturma (Europe/Istanbul)
+    const trTarih = new Intl.DateTimeFormat('tr-TR', {
+        timeZone: 'Europe/Istanbul',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+    }).format(new Date());
+
+    try {
+        // 3. Bildirimi Veritabanına Kaydet (Android'deki bildirim listesi için)
+        if (db) {
+            await db.execute(
+                "INSERT INTO bildirimler (baslik, mesaj, tarih) VALUES (?, ?, ?)",
+                [baslik, mesaj, trTarih]
+            );
+        }
+
+        // 4. Canlı Yayın: Socket.io ile Android'e Fırlat
+        const io = req.app.get('socketio'); 
+        if (io) {
+            io.emit('yeni_bildirim', {
+                baslik: baslik,
+                mesaj: mesaj,
+                tur: tur,
+                tarih: trTarih,
+                okundu: false // Başlangıçta okunmadı (Mavi arka plan için)
+            });
+            console.log(`📢 ${baslik} Android'e gönderildi. Saat: ${trTarih}`);
+        }
+
+        res.json({ success: true, status: "Bildirim dağıtıldı" });
+
+    } catch (err) {
+        console.error("❌ Bildirim Dağıtım Hatası:", err.message);
+        res.status(500).json({ error: "Sinyal dağıtılamadı" });
+    }
+});
+
 // BU SİHİRLİ SATIR, DİĞER DOSYALARIN DA SOCKET'İ KULLANMASINI SAĞLAR
 app.set('socketio', io); 
 
