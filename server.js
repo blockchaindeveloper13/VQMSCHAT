@@ -1,39 +1,36 @@
-require('dotenv').config();
+require('dotenv').config(); // Küçük 'r' ile düzeltildi
 const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const db = require('./config/db'); // Veritabanı bağlantısı
+const db = require('./config/db');
 
 const app = express();
 app.use(cors());
 
-// Dosya limitini artırdık (Video/PDF için kritik)
 app.use(bodyParser.json({ limit: '100mb' }));
 app.use(bodyParser.urlencoded({ limit: '100mb', extended: true }));
 
 // Ana sayfa testi
 app.get('/', (req, res) => { res.send('V-QMSPRO Chat Sunucusu Aktif! 🚀'); });
 
-// ==========================================
-// API YÖNLENDİRMELERİ (BUNLAR EKSİKTİ)
-// ==========================================
+// API YÖNLENDİRMELERİ
 app.use('/api/raporlar', require('./routes/raporlar')); 
-
-// Eğer profil.js dosyan routes klasöründe hazırsa alttaki satırı da aktif et (değilse silinebilir):
 app.use('/api/profil', require('./routes/profil')); 
-
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
-// BU SİHİRLİ SATIR, DİĞER DOSYALARIN DA SOCKET'İ KULLANMASINI SAĞLAR
+
+// SİHİRLİ SATIR: Socket'i Express'e tanıtıyoruz
 app.set('socketio', io);
-// PHP'den gelen bildirim sinyalini yakalayan profesyonel rota
-app.post('/api/bildirim-tetikle', async (req, res) => {
+
+// ==========================================
+// 1. ROTA: BİLDİRİMLERİ LİSTELEME (GET)
+// ==========================================
+app.get('/api/bildirimler', async (req, res) => {
     try {
         if (db) {
-            // Son 50 bildirimi en yeniden en eskiye çekiyoruz
             const [rows] = await db.execute(
                 "SELECT id, baslik, mesaj, tarih, tur, rapor_id FROM bildirimler ORDER BY id DESC LIMIT 50"
             );
@@ -42,20 +39,25 @@ app.post('/api/bildirim-tetikle', async (req, res) => {
             res.status(500).json({ error: "Veritabanı bağlantısı yok" });
         }
     } catch (err) {
-        console.error("❌ Bildirim Çekme Hatası:", err.message);
+        console.error("❌ Liste Çekme Hatası:", err.message);
         res.status(500).json({ error: err.message });
     }
 });
-    const { tur, mesaj } = req.body;
 
-    // 1. Profesyonel Başlık Belirleme
+// ==========================================
+// 2. ROTA: BİLDİRİM TETİKLEME (POST)
+// ==========================================
+app.post('/api/bildirim-tetikle', async (req, res) => {
+    const { tur, mesaj, rapor_id } = req.body;
+
+    // Profesyonel Başlık Belirleme
     let baslik = "VQMS PRO Bilgilendirme";
     if (tur === "kalite") baslik = "Kalite Raporu Paylaşıldı";
     else if (tur === "uretim") baslik = "Üretim Raporu Paylaşıldı";
     else if (tur === "verimlilik") baslik = "Verimlilik Raporu Paylaşıldı";
     else if (tur === "gunluk") baslik = "Günlük Rapor Paylaşıldı";
 
-    // 2. Türkiye Saati ve Tarihi Oluşturma (Europe/Istanbul)
+    // Türkiye Saati Oluşturma
     const trTarih = new Intl.DateTimeFormat('tr-TR', {
         timeZone: 'Europe/Istanbul',
         year: 'numeric', month: '2-digit', day: '2-digit',
@@ -63,15 +65,13 @@ app.post('/api/bildirim-tetikle', async (req, res) => {
     }).format(new Date());
 
     try {
-        // 3. Bildirimi Veritabanına Kaydet (Android'deki bildirim listesi için)
         if (db) {
             await db.execute(
-                "INSERT INTO bildirimler (baslik, mesaj, tarih) VALUES (?, ?, ?)",
-                [baslik, mesaj, trTarih]
+                "INSERT INTO bildirimler (baslik, mesaj, tarih, tur, rapor_id) VALUES (?, ?, ?, ?, ?)",
+                [baslik, mesaj, trTarih, tur, rapor_id || 0]
             );
         }
 
-        // 4. Canlı Yayın: Socket.io ile Android'e Fırlat
         const io = req.app.get('socketio'); 
         if (io) {
             io.emit('yeni_bildirim', {
@@ -79,48 +79,34 @@ app.post('/api/bildirim-tetikle', async (req, res) => {
                 mesaj: mesaj,
                 tur: tur,
                 tarih: trTarih,
-                okundu: false // Başlangıçta okunmadı (Mavi arka plan için)
+                rapor_id: rapor_id || 0,
+                okundu: false
             });
-            console.log(`📢 ${baslik} Android'e gönderildi. Saat: ${trTarih}`);
+            console.log(`📢 ${baslik} Android'e fırlatıldı!`);
         }
-
-        res.json({ success: true, status: "Bildirim dağıtıldı" });
-
+        res.json({ success: true });
     } catch (err) {
-        console.error("❌ Bildirim Dağıtım Hatası:", err.message);
-        res.status(500).json({ error: "Sinyal dağıtılamadı" });
+        console.error("❌ Bildirim Hatası:", err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
- 
-
-
-// Çevrimiçi kullanıcıları tutar: { "userId": "socketId" }
+// ==========================================
+// SOCKET.IO BAĞLANTI YÖNETİMİ
+// ==========================================
 let onlineUsers = new Map(); 
 
 io.on('connection', (socket) => {
     console.log('🔌 Yeni Bağlantı:', socket.id);
 
-    // --- 1. GİRİŞ VE DURUM ---
     socket.on('giris_yap', (userId) => {
         onlineUsers.set(String(userId), socket.id);
-        console.log(`✅ Kullanıcı Giriş Yaptı: ${userId}`);
         io.emit('kullanici_durumu', { userId: userId, status: 'online' });
     });
 
-    socket.on('durum_sorgula', (hedefId) => {
-        const isOnline = onlineUsers.has(String(hedefId));
-        socket.emit('durum_cevabi', { 
-            userId: hedefId, 
-            status: isOnline ? 'online' : 'offline' 
-        });
-    });
-
-    // --- 2. MESAJ GÖNDERME (SPINNER BURADA YÖNETİLİYOR) ---
     socket.on('mesaj_gonder', async (data) => {
         const { gonderen_id, alici_id, mesaj, image_data, file_type, tempId } = data;
         let dbId = 0;
-
         if (db) {
             try {
                 const tip = file_type || (image_data ? 'image' : 'text');
@@ -129,70 +115,36 @@ io.on('connection', (socket) => {
                     [gonderen_id, alici_id, mesaj, image_data || null, tip]
                 );
                 dbId = result.insertId;
-                console.log(`💾 Mesaj Kaydedildi (ID: ${dbId}) - Tür: ${tip}`);
-
-            } catch (err) { 
-                console.error("❌ DB Hatası:", err); 
-            }
+            } catch (err) { console.error("DB Hatası:", err); }
         }
-
-        socket.emit('mesaj_iletildi', { 
-            tempId: tempId, 
-            serverId: dbId, 
-            success: true 
-        });
+        socket.emit('mesaj_iletildi', { tempId, serverId: dbId, success: true });
 
         const hedefSocketId = onlineUsers.get(String(alici_id));
         if (hedefSocketId) {
             io.to(hedefSocketId).emit('yeni_mesaj', {
-                id: dbId,
-                gonderen_id,
-                mesaj,
-                image_data,
-                file_type: file_type || 'text',
-                tarih: new Date().toISOString()
+                id: dbId, gonderen_id, mesaj, image_data, 
+                file_type: file_type || 'text', tarih: new Date().toISOString()
             });
         }
     });
 
-    // --- 3. ARAMA (SESLİ / GÖRÜNTÜLÜ) ---
     socket.on('arama_yap', (data) => {
         const hedefSocketId = onlineUsers.get(String(data.hedefId));
         if (hedefSocketId) {
-            console.log(`📞 Arama Başladı: ${data.callerName} -> ${data.hedefId}`);
             io.to(hedefSocketId).emit('gelen_arama', {
-                caller_name: data.callerName,
-                call_type: data.callType, 
-                caller_id: data.myId
+                caller_name: data.callerName, call_type: data.callType, caller_id: data.myId
             });
-        } else {
-            socket.emit('arama_hatasi', { mesaj: "Kullanıcı çevrimdışı" });
         }
     });
 
-    socket.on('arama_bitir', (data) => {
-        const hedefSocketId = onlineUsers.get(String(data.hedefId));
-        if (hedefSocketId) {
-            io.to(hedefSocketId).emit('arama_bitir', {});
-        }
-    });
-
-    // --- 4. YAZIYOR EFEKTİ ---
-    socket.on('yaziyor_basladi', (data) => {
-        const hedefSocketId = onlineUsers.get(String(data.target_id));
-        if (hedefSocketId) io.to(hedefSocketId).emit('karsi_taraf_yaziyor', { status: true });
-    });
-
-    // --- 5. ÇIKIŞ ---
     socket.on('disconnect', () => {
         let uid = [...onlineUsers.entries()].find(([k, v]) => v === socket.id)?.[0];
         if (uid) {
             onlineUsers.delete(uid);
-            console.log(`❌ Kullanıcı Ayrıldı: ${uid}`);
             io.emit('kullanici_durumu', { userId: uid, status: 'offline' });
         }
     });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`🚀 Sunucu ${PORT} portunda dinlemede!`); });
+server.listen(PORT, () => { console.log(`🚀 Sunucu ${PORT} portunda aktif!`); });
