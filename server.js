@@ -18,6 +18,7 @@ app.get('/', (req, res) => { res.send('V-QMSPRO Chat Sunucusu Aktif! 🚀'); });
 // API YÖNLENDİRMELERİ
 app.use('/api/raporlar', require('./routes/raporlar')); 
 app.use('/api/profil', require('./routes/profil')); 
+app.use('/api/auth', require('./routes/auth'));
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
