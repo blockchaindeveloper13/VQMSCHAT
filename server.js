@@ -27,6 +27,8 @@ app.use('/api/profil', require('./routes/profil'));
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
+// BU SİHİRLİ SATIR, DİĞER DOSYALARIN DA SOCKET'İ KULLANMASINI SAĞLAR
+app.set('socketio', io);
 // PHP'den gelen bildirim sinyalini yakalayan profesyonel rota
 app.post('/api/bildirim-tetikle', async (req, res) => {
     const { tur, mesaj } = req.body;
@@ -75,8 +77,7 @@ app.post('/api/bildirim-tetikle', async (req, res) => {
     }
 });
 
-// BU SİHİRLİ SATIR, DİĞER DOSYALARIN DA SOCKET'İ KULLANMASINI SAĞLAR
-app.set('socketio', io); 
+ 
 
 
 // Çevrimiçi kullanıcıları tutar: { "userId": "socketId" }
