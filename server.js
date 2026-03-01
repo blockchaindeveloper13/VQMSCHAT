@@ -27,6 +27,9 @@ app.use('/api/profil', require('./routes/profil'));
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
+// BU SİHİRLİ SATIR, DİĞER DOSYALARIN DA SOCKET'İ KULLANMASINI SAĞLAR
+app.set('socketio', io); 
+
 
 // Çevrimiçi kullanıcıları tutar: { "userId": "socketId" }
 let onlineUsers = new Map(); 
