@@ -9,16 +9,19 @@ const db = require('./config/db');
 // YENİ EKLEME: FIREBASE BAŞLATMA
 // ==========================================
 const admin = require("firebase-admin");
-//FIREBASE_SERVICE_ACCOUNT değişkenini alıp JSON'a çeviriyoruz
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
+// FIREBASE_SERVICE_ACCOUNT değişkenini alıp JSON'a çeviriyoruz
+try {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
+    // SADECE BİR KEZ BAŞLATILMALI!
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    console.log("✅ Firebase Admin başarıyla başlatıldı.");
+} catch (error) {
+    console.error("❌ Firebase Başlatma Hatası:", error.message);
+}
 // ==========================================
 const app = express();
 app.use(cors());
