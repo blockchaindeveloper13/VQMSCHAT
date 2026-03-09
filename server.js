@@ -5,7 +5,16 @@ const { Server } = require("socket.io");
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const db = require('./config/db');
+// ==========================================
+// YENİ EKLEME: FIREBASE BAŞLATMA
+// ==========================================
+const admin = require("firebase-admin");
+const serviceAccount = require("./vqms-firebase-adminsdk.json"); 
 
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+// ==========================================
 const app = express();
 app.use(cors());
 
@@ -72,7 +81,20 @@ app.post('/api/bildirim-tetikle', async (req, res) => {
                 [baslik, mesaj, trTarih, tur, rapor_id || 0]
             );
         }
+        
+  // ==========================================
+        // YENİ EKLEME: FIREBASE PUSH BİLDİRİMİ
+        // ==========================================
+        const fcmPayload = {
+            notification: { title: baslik, body: mesaj },
+            data: { tur: String(tur), rapor_id: String(rapor_id || 0) },
+            topic: "admin_notifications" 
+        };
 
+        admin.messaging().send(fcmPayload)
+            .then(response => console.log("✅ Firebase Push Gönderildi:", response))
+            .catch(error => console.error("❌ Firebase Hatası:", error));
+        // ==========================================
         const io = req.app.get('socketio'); 
         if (io) {
             io.emit('yeni_bildirim', {
