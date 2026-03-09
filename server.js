@@ -9,7 +9,12 @@ const db = require('./config/db');
 // YENİ EKLEME: FIREBASE BAŞLATMA
 // ==========================================
 const admin = require("firebase-admin");
-const serviceAccount = require("./vqms-firebase-adminsdk.json"); 
+//FIREBASE_SERVICE_ACCOUNT değişkenini alıp JSON'a çeviriyoruz
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
